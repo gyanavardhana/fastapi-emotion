@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from transformers import pipeline
+import joblib
+import numpy as np
 
-# Initialize the sentiment analysis pipeline
-classifier = pipeline("sentiment-analysis", model="michellejieli/emotion_text_classifier")
+# Load the emotion classifier model
+pipe_lr = joblib.load(open("emotion_classifier_pipe_lr_16_june_2021.pkl", "rb"))
 
 # Initialize the FastAPI app
 app = FastAPI()
@@ -33,18 +34,39 @@ sentiment_scores = {
 class Message(BaseModel):
     text: str
 
-@app.post("/analyze-emotion")
-async def analyze_emotion(message: Message):
+# Prediction functions for the emotion classifier
+def predict_emotion(text: str):
+    result = pipe_lr.predict([text])
+    return result[0]
+
+def get_prediction_proba(text: str):
+    result = pipe_lr.predict_proba([text])
+    return result
+
+@app.post("/predict-emotion")
+async def predict_emotion_api(message: Message):
     try:
-        # Perform sentiment analysis on the input text
-        result = classifier(message.text)[0]
-        label = result['label'].lower()  # Get the label in lowercase
-        # Look up the score for the detected emotion
-        score = sentiment_scores.get(label, 0)  # Default to 0 if label is not found
+        # Perform prediction and probability calculation
+        prediction = predict_emotion(message.text).lower()  # Get label in lowercase
+        probability = get_prediction_proba(message.text)
+        
+        # Define the emoji dictionary
+        emotions_emoji_dict = {
+            "anger": "😠", "disgust": "🤮", "fear": "😨😱", "happy": "🤗",
+            "joy": "😂", "neutral": "😐", "sad": "😔", "sadness": "😔",
+            "shame": "😳", "surprise": "😮"
+        }
+        
+        # Look up the score and emoji
+        score = sentiment_scores.get(prediction, 0)  # Default to 0 if not found
+        emoji_icon = emotions_emoji_dict.get(prediction, "")
+        confidence = np.max(probability) * 100
+
         return {
             "message": message.text,
-            "emotion": label,
-            "sentiment_score": score
+            "emotion": prediction,
+            "emoji": emoji_icon,
+            "sentiment_score": score,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
