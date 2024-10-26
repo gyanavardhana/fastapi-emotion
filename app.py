@@ -70,3 +70,7 @@ async def predict_emotion_api(message: Message):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/hello")
+async def hello_world():
+    return "hello world"
